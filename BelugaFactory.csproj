@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Update="host.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Update="appsettings.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+        </None>
+        <None Remove="Temp\**" />
+    </ItemGroup>
+    
+    <ItemGroup>
+      <Folder Include="Ffmpeg\" />
+    </ItemGroup>
+    
+    <ItemGroup>
+      <PackageReference Include="Azure.Messaging.EventHubs" Version="5.11.5" />
+      <PackageReference Include="Azure.Messaging.EventHubs.Processor" Version="5.11.5" />
+      <PackageReference Include="Azure.Storage.Queues" Version="12.21.0-beta.2" />
+      <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
+      <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0-rc.2.24473.5" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.0-rc.2.24473.5" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+      <PackageReference Include="WindowsAzure.Storage" Version="9.3.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="Config\**" />
+      <Compile Remove="Services\tes.cs" />
+      <Compile Include="Config\EnviromentSettings.cs" />
+      <Compile Remove="Temp\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Remove="Config\**" />
+      <EmbeddedResource Remove="Temp\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Remove="Config\**" />
+    </ItemGroup>
+
+</Project>
