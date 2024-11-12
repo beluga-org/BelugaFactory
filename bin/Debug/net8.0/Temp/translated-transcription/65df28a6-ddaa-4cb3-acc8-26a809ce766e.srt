@@ -1,0 +1,9 @@
+1
+00:00:00,000 --> 00:00:12,000
+Hello, good afternoon. My name is Mônica, I am 23 years old, I was born in the city of Sorocaba, in the interior of São Paulo, but I currently live in São Paulo, in the capital.
+
+2
+00:00:12,000 --> 00:00:21,000
+I have been living here for 3 years, I live alone. My penultimate experience was in a digital bank, where I worked as a freelancer.
+
+

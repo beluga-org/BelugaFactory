@@ -1,10 +1,16 @@
-﻿using System.Text.RegularExpressions;
-using Beluga_Functions.Common;
+﻿using System.Text;
+using System.Text.RegularExpressions;
 using BelugaFactory.Common;
+using BelugaFactory.Services.Api;
+using BelugaFactory.Services.Api.Requests;
+using BelugaFactory.Services.Api.Results;
 using BelugaFactory.Services.Encoding;
 using BelugaFactory.Services.Processing;
 using BelugaFactory.Services.Storage;
 using BelugaFactory.Services.Processing.Requests;
+
+//TODO: CRIAR A AS ATUALIZAÇÕES E CHECK-UPS PARA A API
+//TODO: SUBIR O CONTENT EM BASE 64 PARA O VIDEO NO SPEECH-TO-TEXT
 
 namespace BelugaFactory;
 static class Program
@@ -12,6 +18,7 @@ static class Program
     private static readonly FfmpegService FfmpegService = new FfmpegService();
     private static readonly AzureStorageService AzureStorageService = new AzureStorageService();
     private static readonly OpenAiService OpenAiService = new OpenAiService();
+    private static readonly BelugaClient BelugaClient = new BelugaClient();
     private static readonly string TempFolder = Path.Combine(AppContext.BaseDirectory, "Temp");
     
     private static async Task Main(string[] args)
@@ -19,146 +26,225 @@ static class Program
         await AzureStorageService.ProcesQueueMessage("send-translate", ProcessVideo);
     }
 
-    private static async Task ProcessVideo(VideoRequest req)
+    private static async Task ProcessVideo(SendTranslationRequest req)
     {
-        InitializeDirectories();
-        
-        await DownloadToLocal(req);
-        
-        // CONDITIONAL: if video has transcription jump to translate
-        await SpeechToText(req);
-        
-        await Translate(req);
-        
-        await TextToSpeech(req);
-
-        Sync(req);
-    }
-
-    private static async Task DownloadToLocal(VideoRequest req)
-    {
-        await AzureStorageService.DownloadBlob("translation", $"{req.From}/{req.BlobName}.mp4", Path.Combine(TempFolder, "original-video", $"{req.BlobName}.mp4"));
-        
-        FfmpegService.EncodeWithArgs($"-i \"{Path.Combine(TempFolder, "original-video", $"{req.BlobName}.mp4")}\" -an -vcodec copy \"{Path.Combine(TempFolder, "muted-video", $"{req.BlobName}.mp4")}\"");
-        
-        Console.WriteLine($"DOWNLOAD-LOCAL: {req.BlobName} ---> COMPLETED");
-    }
-    
-    private static async Task SpeechToText(VideoRequest req)
-    {
-        using (var fileStream = new FileStream(Path.Combine(TempFolder, "original-video", $"{req.BlobName}.mp4"), FileMode.Open))
+        try
         {
-            TranscriptRequest transcriptionReq = new TranscriptRequest()
+            InitializeDirectories();
+        
+            var translationProcess = await BelugaClient.CreateTranslation(new TranslationRequest()
             {
-                FileStream = fileStream,
-                FileName = req.BlobName
-            };
+                language = req.TargetLanguage,
+                status = "STARTED",
+                videoId = req.VideoId
+            });
+        
+            await DownloadToLocal(translationProcess);
+        
+            // CONDITIONAL: if video has transcription jump to translate
+            await SpeechToText(translationProcess);
+        
+            await Translate(translationProcess);
+        
+            await TextToSpeech(translationProcess);
+
+            await Sync(translationProcess);
             
-            var transcriptionStream = await OpenAiService.Transcript(transcriptionReq);
-            
-            //await AzureStorageService.UploadBlob(transcriptionStream, "application/x-subrip", "transcription", $"{req.From}/{req.BlobName}.srt");
-            
-            using (var transcriptionFileStream = new FileStream(Path.Combine(TempFolder, "original-transcription", $"{req.BlobName}.srt"), FileMode.Create, FileAccess.Write))
-            {
-                await transcriptionStream.CopyToAsync(transcriptionFileStream);
-            }
+            await BelugaClient.UpdateTranslation( translationProcess.id, new TranslationRequest() 
+                { status = "COMPLETED" }
+            );
         }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
+    }
+
+    private static async Task DownloadToLocal(TranslationResult req)
+    {
+        try
+        {
+            await AzureStorageService.DownloadBlob("originals", $"{req.videoId}", Path.Combine(TempFolder, "original-video", $"{req.videoId}.mp4"));
         
-        Console.WriteLine($"SPEECH-TO-TEXT: {req.BlobName} ---> COMPLETED");
+            FfmpegService.EncodeWithArgs($"-i \"{Path.Combine(TempFolder, "original-video", $"{req.videoId}.mp4")}\" -an -vcodec copy \"{Path.Combine(TempFolder, "muted-video", $"{req.videoId}.mp4")}\"");
         
+            Console.WriteLine($"DOWNLOAD-LOCAL: {req.videoId} ---> COMPLETED");
+        }
+        catch (Exception e)
+        {
+            await BelugaClient.UpdateTranslation( req.id, new TranslationRequest() { status = "FAILED" });
+            throw e;
+        }
     }
     
-    private static async Task Translate(VideoRequest req)
+    private static async Task SpeechToText(TranslationResult req)
     {
-        using (var fileStream = new FileStream(Path.Combine(TempFolder, "original-video", $"{req.BlobName}.mp4"), FileMode.Open))
+        try
         {
-            TranscriptRequest transcriptionReq = new TranscriptRequest()
+            using (var fileStream = new FileStream(Path.Combine(TempFolder, "original-video", $"{req.videoId}.mp4"), FileMode.Open))
             {
-                FileStream = fileStream,
-                FileName = req.BlobName
-            };
+                TranscriptRequest transcriptionReq = new TranscriptRequest()
+                {
+                    FileStream = fileStream,
+                    FileName = req.videoId
+                };
             
-            var transcriptionStream = await OpenAiService.Translate(transcriptionReq);
+                var transcriptionStream = await OpenAiService.Transcript(transcriptionReq);
+                
+                using (var transcriptionFileStream = new FileStream(Path.Combine(TempFolder, "original-transcription", $"{req.videoId}.srt"), FileMode.Create, FileAccess.Write))
+                {
+                    await transcriptionStream.CopyToAsync(transcriptionFileStream);
+                }
+                
+                string transcriptionText;
+                using (var reader = new StreamReader(Path.Combine(TempFolder, "original-transcription", $"{req.videoId}.srt")))
+                {
+                    transcriptionText = await reader.ReadToEndAsync();
+                }
+                
+                string base64Transcription = Convert.ToBase64String(Encoding.UTF8.GetBytes(transcriptionText));
+                
+                await BelugaClient.AddContentToVideo(req.videoId, new AddContentRequest { content = base64Transcription });
+            }
+        
+            Console.WriteLine($"SPEECH-TO-TEXT: {req.videoId} ---> COMPLETED");
+        }
+        catch (Exception ex)
+        {
+            // Third-part api
+            await BelugaClient.UpdateTranslation( req.id, new TranslationRequest() { status = "FAILED" });
+            throw ex;
+        }
+    }
+    
+    private static async Task Translate(TranslationResult req)
+    {
+        try
+        {
+            using (var fileStream = new FileStream(Path.Combine(TempFolder, "original-video", $"{req.videoId}.mp4"), FileMode.Open))
+            {
+                TranscriptRequest transcriptionReq = new TranscriptRequest()
+                {
+                    FileStream = fileStream,
+                    FileName = req.videoId
+                };
+            
+                var transcriptionStream = await OpenAiService.Translate(transcriptionReq);
+            
+                using (var transcriptionFileStream = new FileStream(Path.Combine(TempFolder, "translated-transcription", $"{req.videoId}.srt"), FileMode.Create, FileAccess.Write))
+                {
+                    await transcriptionStream.CopyToAsync(transcriptionFileStream);
+                }
+            }
+        
+            Console.WriteLine($"TRANSLATE: {req.videoId} ---> COMPLETED");
+
+        }
+        catch (Exception e)
+        {
+            await BelugaClient.UpdateTranslation( req.id, new TranslationRequest() { status = "FAILED" });
+            throw e;
+        }
+    }    
+    
+    private static async Task TextToSpeech(TranslationResult req)
+    {
+        try
+        {
+            using (var fileStream =
+                   new FileStream(Path.Combine(TempFolder, "translated-transcription", $"{req.videoId}.srt"),
+                       FileMode.Open))
+            {
+                var subtitles = ParseSrtStream(fileStream);
+                string concatAudiosStretchs = ""; 
+            
+                for (int i = 0; i < subtitles.Count; i++)
+                {
+                    concatAudiosStretchs += "file " + $"{req.videoId}_{i}.aac" + '\n';
+                    
+                    using (var audioFileStream =
+                           new FileStream(Path.Combine(TempFolder, "translated-audio", $"{req.videoId}_{i}.aac"),
+                               FileMode.Create, FileAccess.Write))
+                    {
+                        using (var memoryStream = new MemoryStream())
+                        {
+                            SpeechRequest speechReq = new SpeechRequest()
+                            {
+                                Input = subtitles[i].Text
+                            };
+            
+                            byte[] buffer = await OpenAiService.Speech(speechReq, "aac");
+            
+                            await memoryStream.WriteAsync(buffer, 0, buffer.Length);
+            
+                            memoryStream.Position = 0;
+            
+                            await memoryStream.CopyToAsync(audioFileStream);
+                        }
+                    }
+                }
+                
+                using (var audioFileStream =
+                       new FileStream(Path.Combine(TempFolder, "translated-audio", $"{req.videoId}.txt"),
+                           FileMode.Create, FileAccess.Write))
+                {
+                    using (var writer = new StreamWriter(audioFileStream))
+                    {
+                        writer.Write(concatAudiosStretchs); 
+                    }
+                }
+                
+            }
+            
+            FfmpegService.EncodeWithArgs(
+                "-f concat " +
+                $"-i \"{Path.Combine(TempFolder, "translated-audio", $"{req.videoId}.txt")}\" " +
+                $"-c:a copy \"{Path.Combine(TempFolder, "translated-audio", $"{req.videoId}.aac")}\"");
             
             // await AzureStorageService.UploadBlob(transcriptionStream, "application/x-subrip", "transcription", $"{req.To}/{req.BlobName}.srt");
             
-            using (var transcriptionFileStream = new FileStream(Path.Combine(TempFolder, "translated-transcription", $"{req.BlobName}.srt"), FileMode.Create, FileAccess.Write))
-            {
-                await transcriptionStream.CopyToAsync(transcriptionFileStream);
-            }
+            Console.WriteLine($"TEXT-TO-SPEECH: {req.videoId} ---> COMPLETED");
+            
         }
-        
-        Console.WriteLine($"TRANSLATE: {req.BlobName} ---> COMPLETED");
-        
-    }    
-    
-    private static async Task TextToSpeech(VideoRequest req)
-    {
-        using (var fileStream =
-               new FileStream(Path.Combine(TempFolder, "translated-transcription", $"{req.BlobName}.srt"),
-                   FileMode.Open))
+        catch (Exception e)
         {
-            var subtitles = ParseSrtStream(fileStream);
-            string concatAudiosStretchs = ""; 
-        
-            for (int i = 0; i < subtitles.Count; i++)
-            {
-                concatAudiosStretchs += "file " + $"{req.BlobName}_{i}.aac" + '\n';
-                
-                using (var audioFileStream =
-                       new FileStream(Path.Combine(TempFolder, "translated-audio", $"{req.BlobName}_{i}.aac"),
-                           FileMode.Create, FileAccess.Write))
-                {
-                    using (var memoryStream = new MemoryStream())
-                    {
-                        SpeechRequest speechReq = new SpeechRequest()
-                        {
-                            Input = subtitles[i].Text
-                        };
-        
-                        byte[] buffer = await OpenAiService.Speech(speechReq, "aac");
-        
-                        await memoryStream.WriteAsync(buffer, 0, buffer.Length);
-        
-                        memoryStream.Position = 0;
-        
-                        await memoryStream.CopyToAsync(audioFileStream);
-                    }
-                }
-            }
-            
-            using (var audioFileStream =
-                   new FileStream(Path.Combine(TempFolder, "translated-audio", $"{req.BlobName}.txt"),
-                       FileMode.Create, FileAccess.Write))
-            {
-                using (var writer = new StreamWriter(audioFileStream))
-                {
-                    writer.Write(concatAudiosStretchs); 
-                }
-            }
-            
+            await BelugaClient.UpdateTranslation( req.id, new TranslationRequest() { status = "FAILED" });
+            throw e;
         }
-        
-        FfmpegService.EncodeWithArgs(
-            "-f concat " +
-            $"-i \"{Path.Combine(TempFolder, "translated-audio", $"{req.BlobName}.txt")}\" " +
-            $"-c:a copy \"{Path.Combine(TempFolder, "translated-audio", $"{req.BlobName}.aac")}\"");
-        
-        // await AzureStorageService.UploadBlob(transcriptionStream, "application/x-subrip", "transcription", $"{req.To}/{req.BlobName}.srt");
-        
-        Console.WriteLine($"TEXT-TO-SPEECH: {req.BlobName} ---> COMPLETED");
     }
 
-    private static void Sync(VideoRequest req)
+    private static async Task Sync(TranslationResult req)
     {
-        FfmpegService.EncodeWithArgs(
-            $"-i \"{Path.Combine(TempFolder, "muted-video", req.BlobName + ".mp4")}\" " + 
-            $"-i \"{Path.Combine(TempFolder, "translated-audio", req.BlobName + ".aac")}\" " + 
-            $"-c:v copy -c:a aac \"{Path.Combine(TempFolder, "translated-video", req.BlobName + ".mp4")}\"");
-
-        // await AzureStorageService.UploadBlob(transcriptionStream, "application/x-subrip", "transcription", $"{req.To}/{req.BlobName}.srt");
+        try
+        {
+            FfmpegService.EncodeWithArgs(
+                $"-i \"{Path.Combine(TempFolder, "muted-video", req.videoId + ".mp4")}\" " + 
+                $"-i \"{Path.Combine(TempFolder, "translated-audio", req.videoId + ".aac")}\" " + 
+                $"-c:v copy -c:a aac \"{Path.Combine(TempFolder, "translated-video", req.videoId + ".mp4")}\"");
         
-        Console.WriteLine($"SYNC: {req.BlobName} ---> COMPLETED");
+            using (FileStream 
+                   subtitleFileStream = new FileStream(Path.Combine(TempFolder, "translated-transcription", $"{req.videoId}.srt"), FileMode.Open),
+                   translationFileStream = new FileStream(Path.Combine(TempFolder, "translated-video", $"{req.videoId}.mp4"), FileMode.Open))
+            {
+                var subtitleBlob = await AzureStorageService.UploadBlob(subtitleFileStream, "application/x-subrip", "subtitles", $"{req.language}/{req.videoId}");
+                var translationBlob = await AzureStorageService.UploadBlob(translationFileStream, "video/mp4", "translations", $"{req.language}/{req.videoId}");
+
+                await BelugaClient.UpdateTranslation(req.id, new TranslationRequest()
+                {
+                    subtitleUrl = subtitleBlob.Uri.ToString(),
+                    translationUrl = translationBlob.Uri.ToString(),
+                });
+            }
+            
+            Console.WriteLine($"SYNC: {req.videoId} ---> COMPLETED");
+            
+        }
+        catch (Exception e)
+        {
+            await BelugaClient.UpdateTranslation( req.id, new TranslationRequest() { status = "FAILED" });
+            throw e;
+        }
     }
     
     private static List<SubtitleResult> ParseSrtStream(Stream stream)

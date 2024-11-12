@@ -46,3 +46,4 @@ C:\Users\Joao Lucas\Sandbox\BelugaFactory\bin\Debug\net8.0\System.ClientModel.dl
 C:\Users\Joao Lucas\Sandbox\BelugaFactory\bin\Debug\net8.0\System.IO.Hashing.dll
 C:\Users\Joao Lucas\Sandbox\BelugaFactory\bin\Debug\net8.0\System.Memory.Data.dll
 C:\Users\Joao Lucas\Sandbox\BelugaFactory\bin\Debug\net8.0\Azure.Storage.Queues.dll
+C:\Users\Joao Lucas\Sandbox\BelugaFactory\obj\Debug\net8.0\BelugaFactory.sourcelink.json

@@ -17,7 +17,7 @@ public class AzureStorageService
         _cloudStorageAccount = CloudStorageAccount.Parse(EnvironmentSettings.AzureStorageConnectionString);
     }
 
-    public async Task ProcesQueueMessage(string queueName, Func<VideoRequest, Task> processFunction)
+    public async Task ProcesQueueMessage(string queueName, Func<SendTranslationRequest, Task> processFunction)
     {
         try
         {
@@ -39,7 +39,7 @@ public class AzureStorageService
                     
                     Console.WriteLine(blobId);
 
-                    var req = JsonSerializer.Deserialize<VideoRequest>(message.AsString);
+                    var req = JsonSerializer.Deserialize<SendTranslationRequest>(message.AsString);
                     
                     if (req ==  null)
                         break;
@@ -168,7 +168,7 @@ public class AzureStorageService
         }
     }
 
-    public async Task UploadBlob(MemoryStream stream, string contentType, string containerName, string fileName)
+    public async Task<CloudBlockBlob> UploadBlob(Stream stream, string contentType, string containerName, string fileName)
     {
         try
         {
@@ -183,6 +183,8 @@ public class AzureStorageService
             blockBlob.Properties.ContentType = contentType;
             
             await blockBlob.UploadFromStreamAsync(stream);
+
+            return blockBlob;
         }
         catch (Exception ex)
         {

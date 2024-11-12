@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BelugaFactory")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+f071e17792292cad77684266c2e28f0948ffdc42")]
 [assembly: System.Reflection.AssemblyProductAttribute("BelugaFactory")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BelugaFactory")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

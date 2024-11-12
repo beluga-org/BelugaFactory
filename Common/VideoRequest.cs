@@ -1,8 +1,10 @@
 namespace BelugaFactory.Common;
 
-public class VideoRequest
+public class SendTranslationRequest
 {
-    public string BlobName { get; set; }
-    public string From { get; set; }
-    public string To { get; set; }
+    public string VideoId { get; set; }
+    public string OriginLanguage { get; set; }
+    public string TargetLanguage { get; set; }
+    public bool? HasTranscription { get; set; }
 }
+

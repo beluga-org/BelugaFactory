@@ -1,4 +1,4 @@
-namespace Beluga_Functions.Common;
+namespace BelugaFactory.Common;
 
 public class SubtitleResult
 {

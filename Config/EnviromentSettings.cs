@@ -6,6 +6,7 @@ public static class EnvironmentSettings
     public static string OpenAiApiKey { get; private set; }
     public static string AzureStorageConnectionString { get; private set; }
     public static string AzureEventsHubConnectionString { get; private set; }
+    public static string BelugaAPI { get; private set; }
 
     static EnvironmentSettings()
     {
@@ -19,6 +20,7 @@ public static class EnvironmentSettings
         OpenAiApiKey = configuration["ApiKeys:OpenAiApiKey"]; 
         AzureStorageConnectionString = configuration["ConnectionStrings:AzureWebJobsStorage"];
         AzureEventsHubConnectionString = configuration["ConnectionStrings:AzureEventsHubs"];
+        BelugaAPI = configuration["ConnectionStrings:BelugaAPI"];
     }
 }
 
